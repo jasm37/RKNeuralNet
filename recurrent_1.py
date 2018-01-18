@@ -47,14 +47,14 @@ def tensor_pred(x1, x2, w1, w2, wp, b1, b2):
     return pred
 
 # Get input and output data
-n_samples = 102
-init_seq = np.arange(0,102)
+n_samples = 202
+init_seq = np.arange(0,n_samples)
 all_var = train_func(init_seq.reshape(n_samples,1))
 all_var -= np.mean(all_var)
 all_var /= np.std(all_var)
-input1 = all_var[0:100]
-input2 = all_var[1:101]
-output = all_var[2:102]
+input1 = all_var[0:n_samples-2]
+input2 = all_var[1:n_samples-1]
+output = all_var[2:n_samples]
 
 # Split data into training and test samples
 joint_input = np.hstack((input1,input2))#np.vstack((input1,input2)).T
@@ -132,7 +132,7 @@ with tf.Session() as sess:
     # Plot full prediction
     a1 = np.array([input1[0]])
     a2 = np.array([input2[0]])
-    num_it = 100
+    num_it = 200
     pred_list = predict_from_samples(a1, a2, num_it, w_1, w_2, w_p, b_1, b_2)
     plot_seq = np.arange(0, 100)
     plt.plot(plot_seq, pred_list,label="Prediction")
