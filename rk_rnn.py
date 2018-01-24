@@ -12,6 +12,8 @@ class rknn():
         self.t_init = t_init
         self.t_end = t_end
 
+        #self.sess_name = 'RungeKutta'
+
         self.n_oppar = n_oppar
         self.n_var = n_var
         self.n_inputs = n_oppar + n_var
@@ -20,16 +22,16 @@ class rknn():
         self.bsize = 10#200  # train_x.shape[0], 1, 2, 5, 10, 20k
         self.train_epochs = 900
         # Display step
-        self.dstep = 100
+        self.dstep = 50
         # Learning rate
         #self.lr = 0.000001#0.01#0.3#0.1#0.3#0.3 #TODO FOR ADADELTA OPT!!
-        self.lr = 0.001#0.0000025#0.0001#0.0000075##0.0000075#0.0001#0.00002#0.0001#0.0002 #TODO: FOR ADAM OPTIMIZER
+        self.lr = 0.0001#0.0000025#0.0001#0.0000075##0.0000075#0.0001#0.00002#0.0001#0.0002 #TODO: FOR ADAM OPTIMIZER
         # Error bound to stop iterations
-        self.bound = 0.005#8#9#3#2.5#3.2#1.5#2
+        self.bound = 0.000005#8#9#3#2.5#3.2#1.5#2
         self.dropout = 1
 
         self.output = []
-
+        self.pred_list = []
         # Percentage of data to be used to test
         self.test_prop = 0.2
 
@@ -69,7 +71,7 @@ class rknn():
 
     def act_fun(self, x):
         # return np.tanh(x)
-        return np.maximum(0, x)
+        return np.fmax(0.0, x)
 
     def predict_dy(self, y, x):
         # y is the variable vector,
@@ -88,7 +90,6 @@ class rknn():
         stack = tf.stack([y, x])
         var_in = tf.squeeze(stack, axis=2)
         var_in = tf.transpose(var_in)
-        shape = tf.shape(var_in)
         layer_1 = tf.matmul(var_in, self.tf_w1) + self.tf_b1
         layer_1 = self.tf_act_fun(layer_1)
         layer_2 = tf.matmul(layer_1, self.tf_w2) + self.tf_b2
@@ -120,6 +121,18 @@ class rknn():
         out = y + (k1 + 2 * k2 + 2 * k3 + k4) / 6
         return out
 
+    def predict_graph(self, y, x):
+        sess = tf.Session()
+        # First let's load meta graph and restore weights
+        saver = tf.train.import_meta_graph(self.sess_name + '.meta')
+        saver.restore(sess, tf.train.latest_checkpoint('./'))
+        # To acces the variables do the following:
+        #graph = tf.get_default_graph()
+        #w1 = graph.get_tensor_by_name("w1:0")
+        #w2 = graph.get_tensor_by_name("w2:0")
+        pass
+
+
     def start_train(self):
         data = self.generate_data(dt=self.timestep, t_init=self.t_init, t_end=self.t_end, init=1)
         x_size = data.shape[0] - 1
@@ -147,16 +160,16 @@ class rknn():
         z = tf.placeholder("float", [None, self.n_var], name="ODEOutputVariable")
 
         # Arrays to train
-        self.tf_w1 = tf_w1 = tf.get_variable(name="w1", shape=(self.n_inputs, self.n_hidden1),
-                                             initializer=tf.contrib.layers.xavier_initializer())
-        self.tf_w2 = tf_w2 = tf.get_variable(name="w2", shape=(self.n_hidden1, self.n_hidden2),
-                                             initializer=tf.contrib.layers.xavier_initializer())
-        self.tf_w3 = tf_w3 = tf.get_variable(name="w3", shape=(self.n_hidden2, self.n_var),
-                                             initializer=tf.contrib.layers.xavier_initializer())
+        self.tf_w1 = tf.get_variable(name="w1", shape=(self.n_inputs, self.n_hidden1),
+                                     initializer=tf.contrib.layers.xavier_initializer())
+        self.tf_w2 = tf.get_variable(name="w2", shape=(self.n_hidden1, self.n_hidden2),
+                                     initializer=tf.contrib.layers.xavier_initializer())
+        self.tf_w3 = tf.get_variable(name="w3", shape=(self.n_hidden2, self.n_var),
+                                     initializer=tf.contrib.layers.xavier_initializer())
 
-        self.tf_b1 = tf_b1 = tf.Variable(tf.zeros([self.n_hidden1]), "b1")
-        self.tf_b2 = tf_b2 = tf.Variable(tf.zeros([self.n_hidden2]), "b2")
-        self.tf_b3 = tf_b3 = tf.Variable(tf.zeros([self.n_var]), "b3")
+        self.tf_b1 = tf.Variable(tf.zeros([self.n_hidden1]), "b1")
+        self.tf_b2 = tf.Variable(tf.zeros([self.n_hidden2]), "b2")
+        self.tf_b3 = tf.Variable(tf.zeros([self.n_var]), "b3")
 
         # Graph output
         pred = self.tf_forward_pass(y, x)
@@ -184,8 +197,8 @@ class rknn():
                     data_in_1 = train1[i * self.bsize:(i + 1) * self.bsize].reshape((self.bsize, 1))
                     data_in_2 = train2[i * self.bsize:(i + 1) * self.bsize].reshape((self.bsize, 1))
                     data_out = train_out[i * self.bsize:(i + 1) * self.bsize].reshape((self.bsize, 1))
-                    values = {x: data_in_1,
-                              y: data_in_2,
+                    values = {y: data_in_1,
+                              x: data_in_2,
                               z: data_out}
                     sess.run(optimizer, feed_dict=values)
 
@@ -195,28 +208,75 @@ class rknn():
                     data_in_1 = train1[-leftover:].reshape((leftover,1))
                     data_in_2 = train2[-leftover:].reshape((leftover,1))
                     data_out = train_y[-leftover:].reshape((leftover,1))
-                    values = {x: data_in_1,
-                              y: data_in_2,
+                    values = {y: data_in_1,
+                              x: data_in_2,
                               z: data_out}
                     sess.run(optimizer, feed_dict=values)
 
                 if epoch % self.dstep == 0:
-                    values = {x: test1.reshape((test1.shape[0], 1)),
-                              y: test2.reshape((test2.shape[0], 1)),
+                    values = {y: test1.reshape((test1.shape[0], 1)),
+                              x: test2.reshape((test2.shape[0], 1)),
                               z: test_y.reshape((test_y.shape[0], 1))}
                     test_loss = sess.run(loss, feed_dict=values)
+                    values = {y: test1.reshape((test1.shape[0], 1)),
+                              x: test2.reshape((test2.shape[0], 1))}
+                    prediction = sess.run(self.tf_forward_pass(y, x), feed_dict=values)
+
+                    x_num = np.array([[0]])
+                    y_num = np.array([[1]])
+                    y_p1 = sess.run(self.tf_forward_pass(y, x), feed_dict={x: x_num, y: y_num})
+                    print("Prediction at t=0: ", y_p1)
+
+                    real_vals = test_y.reshape((test_y.shape[0], 1))
+                    print(np.sum(np.square(real_vals-prediction)))
                     print('Test Loss at step %s: \t%s' % (epoch, test_loss))
-                    values = {x: train1.reshape((train1.shape[0], 1)),
-                              y: train2.reshape((train2.shape[0], 1)),
+                    values = {y: train1.reshape((train1.shape[0], 1)),
+                              x: train2.reshape((train2.shape[0], 1)),
                               z: train_out.reshape((train_out.shape[0], 1))}
                     train_loss = sess.run(loss, feed_dict=values)
                     print('Train Loss at step %s: \t%s' % (epoch, train_loss))
                 # Store trained arrays
-                self.w1, self.w2, self.w3, self.b1, self.b2, self.b3 = sess.run([tf_w1, tf_w2, tf_w3,
-                                                                                 tf_b1, tf_b2, tf_b3])
+                self.w1, self.w2, self.w3, self.b1, self.b2, self.b3 = sess.run([self.tf_w1, self.tf_w2, self.tf_w3,
+                                                                                 self.tf_b1, self.tf_b2, self.tf_b3])
+
+            #saver = tf.train.Saver()
+            #saver.save(sess, self.sess_name)
+
+            x_num = np.array([[0]])
+            y_num = np.array([[1]])
+            y_p1 = sess.run(self.tf_forward_pass(y,x), feed_dict={x: x_num, y: y_num})
+            y_predict_1 = self.predict(y=y_num, x=x_num)
+            y_p2 = sess.run(self.tf_forward_pass(y, x), feed_dict={x: x_num, y: y_p1})
+            y_predict_2 = self.predict(y=y_predict_1, x=x_num)
+            y_p3 = sess.run(self.tf_forward_pass(y, x), feed_dict={x: x_num, y: y_p2})
+            y_predict_3 = self.predict(y=y_predict_2, x=x_num)
+            y_p4 = sess.run(self.tf_forward_pass(y, x), feed_dict={x: x_num, y: y_p3})
+            y_predict_4 = self.predict(y=y_predict_3, x=x_num)
+            interval = np.arange(0,4)
+            y_pred = np.hstack((y_p1,y_p2,y_p3,y_p4)).squeeze()
+            y_sess = np.hstack((y_predict_1,y_predict_2,y_predict_3,y_predict_4)).squeeze()
+
+            plt.plot(interval, y_pred, label="pred")
+            plt.plot(interval, y_sess, label="sess")
+            plt.plot(interval, self.data[1:5], label="Real data")
+            plt.legend()
+            plt.show()
+            print()
+            '''
+            current_y = y_num
+            current_x = x_num
+            pred_list = y_num
+            num_it=1000
+            for _ in range(num_it - 1):
+                values = {x: current_x, y: current_y}
+                pred_var = sess.run(self.tf_forward_pass(y, x), feed_dict=values)
+                pred_list = np.vstack((pred_list, pred_var))
+                current_y = pred_var
+            self.pred_list = pred_list
+            '''
 
     def ode_f(self, y):
-        return 1.0/(1.0 + y**2)
+        return 1.0/(1.0 + y)# = y'
 
     def ode_solution(self, t, init):
         """
@@ -240,23 +300,40 @@ class rknn():
             current_y = pred_var
         return pred_list
 
+    def predict_dy_from_samples(self, y, x, num_it):
+        current_y = y
+        current_x = x
+        pred_list = y
+        for _ in range(num_it - 1):
+            pred_var = self.predict_dy(current_y, current_x)
+            pred_list = np.vstack((pred_list, pred_var))
+            current_y = pred_var
+        return pred_list
 
 def main():
     n_oppar = 1
     n_var = 1
     timestep = 0.01
     t_init = 0
-    t_end = 10
+    t_end = 100
     f_t_init = 1
     opvar = 0
     rk = rknn(n_oppar, n_var, timestep, t_init, t_end)
+    rk.bsize = 100
+    rk.train_epochs = 10000
+    rk.lr = 0.00001
+    rk.bound = 0.00005
     rk.start_train()
     time_vals = np.arange(t_init, t_end, timestep)
-    #pred = rk.predict_from_samples(f_t_init, opvar, 1000)
-    #pred_per_sample = rk.predict(rk.data.reshape((rk.data.shape[0],1)), np.zeros((1000,1)))
-    sol = rk.ode_solution(time_vals, f_t_init)
+    pred = rk.predict_from_samples(y=f_t_init, x=opvar, num_it=10000)
+    #pred_dy = rk.predict_dy_from_samples(f_t_init, opvar, 10000)
+    #pred_per_sample = rk.predict(y=rk.data.reshape((rk.data.shape[0],1)), x=np.zeros((1000,1)))
+    #sol = rk.ode_solution(time_vals, f_t_init)
+    #plt.plot(time_vals, pred_dy, label="Prediction")
     plt.plot(time_vals, rk.data, label="True")
-    #plt.plot(time_vals, pred_per_sample, label="Prediction")
+    #plt.plot(time_vals, pred_per_sample, label="Prediction per sample")
+    plt.plot(time_vals, pred, label="Prediction")
+    #plt.plot(time_vals, rk.pred_list, label="Prediction sess")
     plt.legend()
     plt.show()
 
