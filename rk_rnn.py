@@ -65,12 +65,12 @@ class rknn():
         self.heatload_list = []
 
     def tf_act_fun(self, x):
-        # return tf.nn.tanh(x)
+        #return tf.nn.tanh(x)
         return tf.nn.relu(x)
         # return tf.nn.sigmoid(x)
 
     def act_fun(self, x):
-        # return np.tanh(x)
+        #return np.tanh(x)
         return np.fmax(0.0, x)
 
     def predict_dy(self, y, x):
@@ -120,18 +120,6 @@ class rknn():
         k4 = dt * self.predict_dy(y + k3, x)
         out = y + (k1 + 2 * k2 + 2 * k3 + k4) / 6
         return out
-
-    def predict_graph(self, y, x):
-        sess = tf.Session()
-        # First let's load meta graph and restore weights
-        saver = tf.train.import_meta_graph(self.sess_name + '.meta')
-        saver.restore(sess, tf.train.latest_checkpoint('./'))
-        # To acces the variables do the following:
-        #graph = tf.get_default_graph()
-        #w1 = graph.get_tensor_by_name("w1:0")
-        #w2 = graph.get_tensor_by_name("w2:0")
-        pass
-
 
     def start_train(self):
         data = self.generate_data(dt=self.timestep, t_init=self.t_init, t_end=self.t_end, init=1)
@@ -239,42 +227,6 @@ class rknn():
                 self.w1, self.w2, self.w3, self.b1, self.b2, self.b3 = sess.run([self.tf_w1, self.tf_w2, self.tf_w3,
                                                                                  self.tf_b1, self.tf_b2, self.tf_b3])
 
-            #saver = tf.train.Saver()
-            #saver.save(sess, self.sess_name)
-
-            x_num = np.array([[0]])
-            y_num = np.array([[1]])
-            y_p1 = sess.run(self.tf_forward_pass(y,x), feed_dict={x: x_num, y: y_num})
-            y_predict_1 = self.predict(y=y_num, x=x_num)
-            y_p2 = sess.run(self.tf_forward_pass(y, x), feed_dict={x: x_num, y: y_p1})
-            y_predict_2 = self.predict(y=y_predict_1, x=x_num)
-            y_p3 = sess.run(self.tf_forward_pass(y, x), feed_dict={x: x_num, y: y_p2})
-            y_predict_3 = self.predict(y=y_predict_2, x=x_num)
-            y_p4 = sess.run(self.tf_forward_pass(y, x), feed_dict={x: x_num, y: y_p3})
-            y_predict_4 = self.predict(y=y_predict_3, x=x_num)
-            interval = np.arange(0,4)
-            y_pred = np.hstack((y_p1,y_p2,y_p3,y_p4)).squeeze()
-            y_sess = np.hstack((y_predict_1,y_predict_2,y_predict_3,y_predict_4)).squeeze()
-
-            plt.plot(interval, y_pred, label="pred")
-            plt.plot(interval, y_sess, label="sess")
-            plt.plot(interval, self.data[1:5], label="Real data")
-            plt.legend()
-            plt.show()
-            print()
-            '''
-            current_y = y_num
-            current_x = x_num
-            pred_list = y_num
-            num_it=1000
-            for _ in range(num_it - 1):
-                values = {x: current_x, y: current_y}
-                pred_var = sess.run(self.tf_forward_pass(y, x), feed_dict=values)
-                pred_list = np.vstack((pred_list, pred_var))
-                current_y = pred_var
-            self.pred_list = pred_list
-            '''
-
     def ode_f(self, y):
         return 1.0/(1.0 + y)# = y'
 
@@ -319,21 +271,23 @@ def main():
     f_t_init = 1
     opvar = 0
     rk = rknn(n_oppar, n_var, timestep, t_init, t_end)
-    rk.bsize = 100
+    rk.bsize = 1000
     rk.train_epochs = 10000
     rk.lr = 0.00001
     rk.bound = 0.00005
     rk.start_train()
     time_vals = np.arange(t_init, t_end, timestep)
     pred = rk.predict_from_samples(y=f_t_init, x=opvar, num_it=10000)
-    #pred_dy = rk.predict_dy_from_samples(f_t_init, opvar, 10000)
-    #pred_per_sample = rk.predict(y=rk.data.reshape((rk.data.shape[0],1)), x=np.zeros((1000,1)))
-    #sol = rk.ode_solution(time_vals, f_t_init)
-    #plt.plot(time_vals, pred_dy, label="Prediction")
+    plt.title("ODE solution")
     plt.plot(time_vals, rk.data, label="True")
-    #plt.plot(time_vals, pred_per_sample, label="Prediction per sample")
     plt.plot(time_vals, pred, label="Prediction")
-    #plt.plot(time_vals, rk.pred_list, label="Prediction sess")
+    plt.legend()
+    plt.show()
+
+    pred_dy = rk.predict_dy_from_samples(y=f_t_init, x=opvar, num_it=10000)
+    plt.title("ODE RHS")
+    plt.plot(time_vals, 1/(1+time_vals), label="True")
+    plt.plot(time_vals, pred_dy, label="Prediction")
     plt.legend()
     plt.show()
 
