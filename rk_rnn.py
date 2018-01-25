@@ -3,7 +3,53 @@ import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
 
+
+def ode_solution(t, init):
+    """
+    :param t: ode parameter
+    :param init: inital value y(0)
+    """
+    '''
+        x1 = 10*np.cos(t*2*np.pi/100).reshape((t.shape[0],1))
+        x2 = 3*np.sin(t*2*np.pi/100).reshape((t.shape[0],1))
+        joint = np.hstack((x1,x2))
+        return joint
+    '''
+    x1 = (2*(np.cos(t) + t*np.sin(t))).reshape((t.shape[0],1))
+    x2 = (2*(np.sin(t) - t*np.cos(t))).reshape((t.shape[0],1))
+    joint = np.hstack((x1, x2))
+    return joint
+    #return (np.sqrt((init + 1) ** 2 - 1 + 2 * t + 1) - 1).reshape((t.shape[0],1))
+    #return (((t-50)**3 + 10)/(-50**3 + 10)).reshape((t.shape[0],1))
+
+
+def generate_data(t_init, t_end, dt, init):
+    t = np.arange(t_init, t_end, dt)
+    return ode_solution(t, init)
+
+
+def set_data(timestep, t_init, t_end, f_t_init):
+    data = generate_data(dt=timestep, t_init=t_init, t_end=t_end, init=f_t_init)
+    mean = np.mean(data)
+    data -= mean
+    std = np.std(data)
+    data /= std
+    return data, mean, std
+
+
 class rknn():
+    """
+        Given the ODE: y'=f(y,x), with y(0)=f_t_init
+        This function(using rknn) learns the 4th Order Runge Kutta integrator
+        given the data at many timesteps
+        :param n_var = dim(y), number of variables
+        :param n_oppar = dim(x), number of operating parameters
+        :param timestep = dt
+        :param t_init initial time
+        :param t_end end time
+        Data must be fed with the method start_train
+    """
+
     def __init__(self, n_oppar, n_var, timestep, t_init, t_end):
         self.n_hidden1 = 6
         self.n_hidden2 = 6
@@ -66,8 +112,6 @@ class rknn():
         self.heatload_list = []
 
     def add_gaussian_noise(self, layer, std):
-        #noise = np.random.randn(layer.shape[0], layer.shape[1])*std
-        #return layer + noise
         return np.random.normal(layer, scale=std)
 
     def tf_act_fun(self, x):
@@ -93,10 +137,8 @@ class rknn():
     def tf_predict_dy(self, y, x):
         # y is the variable vector,
         # x are the operating parameters(as a vector)
-        stack = tf.stack([y, x])
-        var_in = tf.squeeze(stack, axis=2)
-        var_in = tf.transpose(var_in)
-        layer_1 = tf.matmul(var_in, self.tf_w1) + self.tf_b1
+        stack = tf.concat(values=[y,x], concat_dim=1)
+        layer_1 = tf.matmul(stack, self.tf_w1) + self.tf_b1
         layer_1 = self.tf_act_fun(layer_1)
         layer_2 = tf.matmul(layer_1, self.tf_w2) + self.tf_b2
         layer_2 = self.tf_act_fun(layer_2)
@@ -127,13 +169,10 @@ class rknn():
         out = y + (k1 + 2 * k2 + 2 * k3 + k4) / 6
         return out
 
-    def start_train(self):
-        data = self.generate_data(dt=self.timestep, t_init=self.t_init, t_end=self.t_end, init=1)
-        data -= np.mean(data)
-        data /= np.std(data)
+    def start_train(self, data):
         self.f_t_init = data[0]
         x_size = data.shape[0] - 1
-        input_var = data[:x_size].reshape((x_size,1))
+        input_var = data[:x_size,:].reshape((x_size,data.shape[1]))
         self.output = data[1:]
         self.data = data
         oppar = np.zeros((x_size,1))
@@ -145,8 +184,8 @@ class rknn():
 
         train_x, test_x, train_y, test_y = train_test_split(joint_input, self.output,
                                                             test_size=int(x_size*ratio), random_state=42)
-        test1 = test_x[:, 0]
-        test2 = test_x[:, 1]
+        test1 = test_x[:, :self.n_var]
+        test2 = test_x[:, self.n_var:]
 
         n_batches = int(train_x.shape[0] / self.bsize)
         leftover = train_x.shape[0] - n_batches * self.bsize
@@ -174,6 +213,13 @@ class rknn():
         # Loss function and optimizer
         pow_diff = tf.pow(pred - z, 2)
         loss = tf.reduce_sum(pow_diff)
+        # Regularizers:
+        '''
+        reg_losses = tf.nn.l2_loss(self.tf_w1) + tf.nn.l2_loss(self.tf_w2) + \
+                     tf.nn.l2_loss(self.tf_w3)
+        reg_weight = 0.00001
+        loss += reg_weight*reg_losses
+        '''
         optimizer = tf.train.AdamOptimizer(learning_rate=self.lr).minimize(loss)
 
         # Hardcoded parameters:
@@ -186,16 +232,16 @@ class rknn():
                 epoch += 1
                 # Shuffle training samples
                 rand_index = np.random.permutation(len(train_x))
-                #train1 = self.add_gaussian_noise(train_x[rand_index, 0], 0.0005) ## Testing noisy input
-                train1 = train_x[rand_index, 0]
-                train2 = train_x[rand_index, 1]
-                #train_out = self.add_gaussian_noise(train_y[rand_index], 0.0005)
-                train_out = train_y[rand_index]
+                #train1 = self.add_gaussian_noise(train_x[rand_index, :self.n_var], 0.0005) ## Testing noisy input
+                train1 = train_x[rand_index, :self.n_var]
+                train2 = train_x[rand_index, self.n_var:]
+                #train_out = self.add_gaussian_noise(train_y[rand_index,:], 0.0005)
+                train_out = train_y[rand_index,:]
                 for i in range(n_batches):
                     # Group shuffled samples in batches
-                    data_in_1 = train1[i * self.bsize:(i + 1) * self.bsize].reshape((self.bsize, 1))
-                    data_in_2 = train2[i * self.bsize:(i + 1) * self.bsize].reshape((self.bsize, 1))
-                    data_out = train_out[i * self.bsize:(i + 1) * self.bsize].reshape((self.bsize, 1))
+                    data_in_1 = train1[i * self.bsize:(i + 1) * self.bsize].reshape((self.bsize, self.n_var))
+                    data_in_2 = train2[i * self.bsize:(i + 1) * self.bsize].reshape((self.bsize, self.n_oppar))
+                    data_out = train_out[i * self.bsize:(i + 1) * self.bsize].reshape((self.bsize, self.n_var))
                     values = {y: data_in_1,
                               x: data_in_2,
                               z: data_out}
@@ -204,55 +250,29 @@ class rknn():
                 if leftover == 0:
                     pass
                 else:
-                    data_in_1 = train1[-leftover:].reshape((leftover,1))
-                    data_in_2 = train2[-leftover:].reshape((leftover,1))
-                    data_out = train_y[-leftover:].reshape((leftover,1))
+                    data_in_1 = train1[-leftover:,:].reshape((leftover, self.n_var))
+                    data_in_2 = train2[-leftover:,:].reshape((leftover, self.n_oppar))
+                    data_out = train_y[-leftover:,:].reshape((leftover, self.n_var))
                     values = {y: data_in_1,
                               x: data_in_2,
                               z: data_out}
                     sess.run(optimizer, feed_dict=values)
 
                 if epoch % self.dstep == 0:
-                    values = {y: test1.reshape((test1.shape[0], 1)),
-                              x: test2.reshape((test2.shape[0], 1)),
-                              z: test_y.reshape((test_y.shape[0], 1))}
+                    values = {y: test1.reshape((test1.shape[0], self.n_var)),
+                              x: test2.reshape((test2.shape[0], self.n_oppar)),
+                              z: test_y.reshape((test_y.shape[0], self.n_var))}
                     test_loss = sess.run(loss, feed_dict=values)
-                    values = {y: test1.reshape((test1.shape[0], 1)),
-                              x: test2.reshape((test2.shape[0], 1))}
-                    prediction = sess.run(self.tf_forward_pass(y, x), feed_dict=values)
-
-                    x_num = np.array([[0]])
-                    y_num = np.array([[1]])
-                    y_p1 = sess.run(self.tf_forward_pass(y, x), feed_dict={x: x_num, y: y_num})
-                    print("Prediction at t=0: ", y_p1)
-
-                    real_vals = test_y.reshape((test_y.shape[0], 1))
-                    print(np.sum(np.square(real_vals-prediction)))
                     print('Test Loss at step %s: \t%s' % (epoch, test_loss))
-                    values = {y: train1.reshape((train1.shape[0], 1)),
-                              x: train2.reshape((train2.shape[0], 1)),
-                              z: train_out.reshape((train_out.shape[0], 1))}
+
+                    values = {y: train1.reshape((train1.shape[0], self.n_var)),
+                              x: train2.reshape((train2.shape[0], self.n_oppar)),
+                              z: train_out.reshape((train_out.shape[0], self.n_var))}
                     train_loss = sess.run(loss, feed_dict=values)
                     print('Train Loss at step %s: \t%s' % (epoch, train_loss))
                 # Store trained arrays
                 self.w1, self.w2, self.w3, self.b1, self.b2, self.b3 = sess.run([self.tf_w1, self.tf_w2, self.tf_w3,
                                                                                  self.tf_b1, self.tf_b2, self.tf_b3])
-
-    def ode_f(self, y):
-        return 1.0/(1.0 + y)# = y'
-
-    def ode_solution(self, t, init):
-        """
-        :param t: ode parameter
-        :param init: inital value y(0)
-        :return:
-        """
-        return np.sqrt((init+1)**2-1 + 2*t + 1) -1
-        #return ((t-50)**3 + 10)/(-50**3 + 10)
-
-    def generate_data(self, t_init, t_end, dt, init):
-        t = np.arange(t_init, t_end, dt)
-        return self.ode_solution(t, init)
 
     def predict_from_samples(self, y, x, num_it):
         current_y = y
@@ -274,37 +294,85 @@ class rknn():
             current_y = pred_var
         return pred_list
 
-def main():
+def main_1d():
     n_oppar = 1
     n_var = 1
-    timestep = 0.001
+    timestep = 0.01
     t_init = 0
     t_end = 100
     f_t_init = 1
-    opvar = 0
+    num_it = int((t_end-t_init)/timestep)
+    oppar = 0
     rk = rknn(n_oppar, n_var, timestep, t_init, t_end)
-    rk.bsize = 10000
+    rk.bsize = int(num_it/10.0)
     rk.train_epochs = 1000
-    rk.lr = 0.0001
+    rk.lr = 0.01
     rk.bound = 0.0000005
     rk.n_hidden1 = 20
     rk.n_hidden2 = 20
-    rk.start_train()
+    data, mean, std = set_data(timestep, t_init, t_end, f_t_init)
+
+    rk.start_train(data)
+
     time_vals = np.arange(t_init, t_end, timestep)
-    pred = rk.predict_from_samples(y=rk.f_t_init, x=opvar, num_it=100000)
+    pred = rk.predict_from_samples(y=rk.f_t_init, x=oppar, num_it=num_it)
+
+    # Plots
+
+    plt.plot(time_vals, rk.data[:, 0], label="Real Value")
+    plt.plot(time_vals, pred[:, 0], label="Prediction")
     plt.title("ODE solution")
-    plt.plot(time_vals, rk.data, label="True")
-    plt.plot(time_vals, pred, label="Prediction")
     plt.legend()
+
     plt.show()
 
-    #pred_dy = rk.predict_dy_from_samples(y=f_t_init, x=opvar, num_it=100000)
-    #plt.title("ODE RHS")
-    #plt.plot(time_vals, 1/(1+time_vals), label="True")
-    #plt.plot(time_vals, pred_dy, label="Prediction")
-    #plt.legend()
-    #plt.show()
+def main_2d():
+    n_oppar = 1
+    n_var = 2
+    timestep = 0.01
+    t_init = 0
+    t_end = 100
+    f_t_init = 1
+    num_it = int((t_end-t_init)/timestep)
+    oppar = 0
+    rk = rknn(n_oppar, n_var, timestep, t_init, t_end)
+    rk.bsize = int(num_it/10.0)
+    rk.train_epochs = 2000
+    rk.lr = 0.001
+    rk.bound = 0.000005
+    rk.n_hidden1 = 20
+    rk.n_hidden2 = 20
+    data, mean, std = set_data(timestep, t_init, t_end, f_t_init)
+
+    rk.start_train(data)
+
+    time_vals = np.arange(t_init, t_end, timestep)
+    pred = rk.predict_from_samples(y=rk.f_t_init, x=oppar, num_it=num_it)
+
+    # Plots
+    fig = plt.figure(figsize=(15, 5))
+
+    ax = fig.add_subplot(131)
+    plt.plot(rk.data[:,0], rk.data[:,1], label="Real Value")
+    plt.plot(pred[:,0], pred[:,1], label="Prediction")
+    plt.title("ODE solution")
+    plt.legend()
+
+    ax = fig.add_subplot(132)
+    plt.plot(time_vals, rk.data[:, 0], label="Real Value")
+    plt.plot(time_vals, pred[:, 0], label="Prediction")
+    plt.title("ODE solution x_1")
+    plt.legend()
+
+    ax = fig.add_subplot(133)
+    plt.plot(time_vals, rk.data[:, 1], label="Real Value")
+    plt.plot(time_vals, pred[:, 1], label="Prediction")
+    plt.title("ODE solution x_2")
+    plt.legend()
+
+    plt.show()
 
 if __name__ == "__main__":
-    main()
+    #main_1d() # To run main_1d, the function ode_sol must be changed to a 1d eq.
+    main_2d()
 
