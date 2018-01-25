@@ -12,6 +12,7 @@ class rknn():
         self.t_init = t_init
         self.t_end = t_end
 
+        self.f_t_init = 0
         #self.sess_name = 'RungeKutta'
 
         self.n_oppar = n_oppar
@@ -63,6 +64,11 @@ class rknn():
         self.point_list = [] #vtk geometry list
         self.coeff_list = []
         self.heatload_list = []
+
+    def add_gaussian_noise(self, layer, std):
+        #noise = np.random.randn(layer.shape[0], layer.shape[1])*std
+        #return layer + noise
+        return np.random.normal(layer, scale=std)
 
     def tf_act_fun(self, x):
         #return tf.nn.tanh(x)
@@ -123,6 +129,9 @@ class rknn():
 
     def start_train(self):
         data = self.generate_data(dt=self.timestep, t_init=self.t_init, t_end=self.t_end, init=1)
+        data -= np.mean(data)
+        data /= np.std(data)
+        self.f_t_init = data[0]
         x_size = data.shape[0] - 1
         input_var = data[:x_size].reshape((x_size,1))
         self.output = data[1:]
@@ -177,8 +186,10 @@ class rknn():
                 epoch += 1
                 # Shuffle training samples
                 rand_index = np.random.permutation(len(train_x))
+                #train1 = self.add_gaussian_noise(train_x[rand_index, 0], 0.0005) ## Testing noisy input
                 train1 = train_x[rand_index, 0]
                 train2 = train_x[rand_index, 1]
+                #train_out = self.add_gaussian_noise(train_y[rand_index], 0.0005)
                 train_out = train_y[rand_index]
                 for i in range(n_batches):
                     # Group shuffled samples in batches
@@ -237,6 +248,7 @@ class rknn():
         :return:
         """
         return np.sqrt((init+1)**2-1 + 2*t + 1) -1
+        #return ((t-50)**3 + 10)/(-50**3 + 10)
 
     def generate_data(self, t_init, t_end, dt, init):
         t = np.arange(t_init, t_end, dt)
@@ -265,31 +277,34 @@ class rknn():
 def main():
     n_oppar = 1
     n_var = 1
-    timestep = 0.01
+    timestep = 0.001
     t_init = 0
     t_end = 100
     f_t_init = 1
     opvar = 0
     rk = rknn(n_oppar, n_var, timestep, t_init, t_end)
-    rk.bsize = 1000
-    rk.train_epochs = 10000
-    rk.lr = 0.00001
-    rk.bound = 0.00005
+    rk.bsize = 10000
+    rk.train_epochs = 1000
+    rk.lr = 0.0001
+    rk.bound = 0.0000005
+    rk.n_hidden1 = 20
+    rk.n_hidden2 = 20
     rk.start_train()
     time_vals = np.arange(t_init, t_end, timestep)
-    pred = rk.predict_from_samples(y=f_t_init, x=opvar, num_it=10000)
+    pred = rk.predict_from_samples(y=rk.f_t_init, x=opvar, num_it=100000)
     plt.title("ODE solution")
     plt.plot(time_vals, rk.data, label="True")
     plt.plot(time_vals, pred, label="Prediction")
     plt.legend()
     plt.show()
 
-    pred_dy = rk.predict_dy_from_samples(y=f_t_init, x=opvar, num_it=10000)
-    plt.title("ODE RHS")
-    plt.plot(time_vals, 1/(1+time_vals), label="True")
-    plt.plot(time_vals, pred_dy, label="Prediction")
-    plt.legend()
-    plt.show()
+    #pred_dy = rk.predict_dy_from_samples(y=f_t_init, x=opvar, num_it=100000)
+    #plt.title("ODE RHS")
+    #plt.plot(time_vals, 1/(1+time_vals), label="True")
+    #plt.plot(time_vals, pred_dy, label="Prediction")
+    #plt.legend()
+    #plt.show()
 
 if __name__ == "__main__":
     main()
+
