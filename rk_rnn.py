@@ -2,6 +2,7 @@ from sklearn.model_selection import train_test_split
 import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 
 
 def ode_solution(t, init):
@@ -170,6 +171,7 @@ class rknn():
         return out
 
     def start_train(self, data):
+        # Data has shape (#snapshots, #vars)
         self.f_t_init = data[0]
         x_size = data.shape[0] - 1
         input_var = data[:x_size,:].reshape((x_size,data.shape[1]))
@@ -372,7 +374,58 @@ def main_2d():
 
     plt.show()
 
+def main_POD():
+    n_oppar = 1
+    n_var = 40
+    timestep = 0.05
+    t_init = 0
+    t_end = 20.05
+
+    data = np.load('data\\POD_Coeff_40.npy')
+    twod_data = data[-401:, :n_var] # Simulation run every 401 steps
+    twod_data -= np.mean(twod_data, axis=0)
+    #twod_data /= np.std(twod_data, axis=0)
+
+    num_it = int((t_end-t_init)/timestep)
+    oppar = 0
+    rk = rknn(n_oppar, n_var, timestep, t_init, t_end)
+    rk.bsize = int(num_it/10.0)
+    rk.train_epochs = 3000
+    rk.lr = 0.0001
+    rk.bound = 0.0001
+    rk.n_hidden1 = 10
+    rk.n_hidden2 = 10
+
+    rk.start_train(twod_data)
+    time_vals = np.arange(t_init, t_end, timestep)
+    pred = rk.predict_from_samples(y=data[-401,:n_var], x=oppar, num_it=num_it)
+
+    # Plots
+    fig = plt.figure(figsize=(15, 5))
+
+    ax = fig.add_subplot(131, projection='3d')
+    plt.plot(rk.data[:, 0], rk.data[:, 1], rk.data[:, 2], label="Real Value")
+    plt.plot(pred[:, 0], pred[:, 1], pred[:, 2], label="Prediction")
+    plt.title("ODE solution")
+    plt.legend()
+
+    ax = fig.add_subplot(132)
+    plt.plot(time_vals, rk.data[:, 0], label="Real Value")
+    plt.plot(time_vals, pred[:, 0], label="Prediction")
+    plt.title("ODE solution x_1")
+    plt.legend()
+
+    ax = fig.add_subplot(133)
+    plt.plot(time_vals, rk.data[:, 1], label="Real Value")
+    plt.plot(time_vals, pred[:, 1], label="Prediction")
+    plt.title("ODE solution x_2")
+    plt.legend()
+
+    plt.show()
+
+
 if __name__ == "__main__":
     #main_1d() # To run main_1d, the function ode_sol must be changed to a 1d eq.
-    main_2d()
+    #main_2d()
+    main_POD()
 
