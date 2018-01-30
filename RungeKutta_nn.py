@@ -88,7 +88,7 @@ class RungeKutta_nn():
     def tf_predict_dy(self, y, x):
         # y is the variable vector,
         # x are the operating parameters(as a vector)
-        stack = tf.concat(values=[y,x], concat_dim=1)
+        stack = tf.concat(values=[y,x], axis=1)
         layer_1 = tf.matmul(stack, self.tf_w1) + self.tf_b1
         layer_1 = self.tf_act_fun(layer_1)
         layer_2 = tf.matmul(layer_1, self.tf_w2) + self.tf_b2
@@ -162,25 +162,27 @@ class RungeKutta_nn():
         if data_x.ndim == 1:
             data_x = data_x.reshape((data_x.shape[0], 1))
 
-        # Data has shape (#snapshots, #vars)
-        #self.f_t_init = data_y[0]
-        n_train = data_y.shape[0]
-
-        self.data = np.hstack((data_y, data_x))
-        self.input_y = data_y
-        self.input_x = data_x
-        self.joint_input = np.hstack((self.input_y, self.input_x))
-
         if output_y is None:
             self.output = data_y[1:]
+            self.input_y = data_y[:-1]
+            self.input_x = data_x[:-1]
+
         else:
-            self.output = output_y[:400]
+            self.output = output_y
+            self.input_y = data_y
+            self.input_x = data_x
+
+        # Data has shape (#snapshots, #vars)
+        # self.f_t_init = data_y[0]
+        n_train = self.input_y.shape[0]
+        self.data = np.hstack((data_y, data_x))
 
         self.joint_input = np.hstack((self.input_y, self.input_x))
         ratio = 0.1
 
         train_input, test_input, train_output, test_output = train_test_split(self.joint_input, self.output,
-                                                            test_size=int(n_train * ratio), random_state=42)
+                                                                              test_size=int(n_train * ratio),
+                                                                              random_state=42)
         test_y = test_input[:, :self.n_var]
         test_x = test_input[:, self.n_var:]
 
@@ -282,6 +284,7 @@ class RungeKutta_nn():
 def add_gaussian_noise(layer, std):
     return np.random.normal(layer, scale=std)
 
+
 def order_training_data(y_var, params, range_list):
     """
     Given simulation data in one big array, order training data for neural network.
@@ -336,29 +339,22 @@ def order_training_data(y_var, params, range_list):
 
 
 def main_POD():
-
     n_oppar = 1
     n_var = 10
     timestep = 0.05
     t_init = 0
-    t_end = 20.05
+    t_end = 20
 
 
-    data_in_y = np.load('data\\test_iny_m.npy')
-    data_in_x = np.load('data\\test_inx_m.npy')
-    data_out = np.load('data\\test_out_m.npy')
-    n_oppar = 1
-    n_var = 3
-    timestep = 0.1
-    t_init = 0
-    t_end = 1
 
-    '''
-    data = np.load('data\\POD_Coeff_40.npy')
-    twod_data = data[:, :n_var] # Simulation run every 401 steps
+    # For Windows:
+    #data = np.load('data\\POD_Coeff_40.npy')
+    # For Linux
+    data = np.load('data/POD_Coeff_40.npy')
+    twod_data = data[:400, :n_var] # Simulation run every 401 steps
     twod_data -= np.mean(twod_data, axis=0)
     #twod_data /= np.std(twod_data, axis=0)
-    '''
+
     num_it = int((t_end-t_init)/timestep)
     oppar = 0
     rk = RungeKutta_nn(n_oppar, n_var, timestep, t_init, t_end)
@@ -369,18 +365,12 @@ def main_POD():
     rk.n_hidden1 = 10
     rk.n_hidden2 = 10
 
-    #oppar = np.zeros(twod_data.shape[0])
-    #rk.start_train(twod_data, oppar)
-    rk.start_train(data_in_y, data_in_x, data_out)
-    range10 = np.arange(0,10,1)
-    pred = rk.predict_from_samples(y=data_in_y[0], x=data_in_x, num_it=10)
-    plt.plot(pred[:,0], pred[:,1])
-    plt.plot(data_out[:10, 0], data_out[:10, 1])
-    plt.show()
+    oppar = np.zeros(twod_data.shape[0])
+    rk.start_train(twod_data, oppar)
 
     time_vals = np.arange(t_init, t_end, timestep)
-    '''
-    pred = rk.predict_from_samples(y=data[-401,:n_var], x=oppar, num_it=num_it)
+
+    pred = rk.predict_from_samples(y=data[0,:n_var], x=oppar, num_it=num_it)
 
     # Plots
     fig = plt.figure(figsize=(15, 5))
@@ -404,10 +394,93 @@ def main_POD():
     plt.legend()
 
     plt.show()
+
+
     '''
+    # For Windows:
+    data_in_y = np.load('data\\test_iny_m.npy')
+    data_in_x = np.load('data\\test_inx_m.npy')
+    data_out = np.load('data\\test_out_m.npy')
+
+    #For Linux:
+    data_in_y = np.load('data/test_iny_m.npy')
+    data_in_x = np.load('data/test_inx_m.npy')
+    data_out = np.load('data/test_out_m.npy')
+    n_oppar = 1
+    n_var = 3
+    timestep = 0.1
+    t_init = 0
+    t_end = 1
+
+    rk.start_train(data_in_y, data_in_x, data_out)
+    range10 = np.arange(0,10,1)
+    pred = rk.predict_from_samples(y=data_in_y[0], x=data_in_x, num_it=10)
+    plt.plot(pred[:,0], pred[:,1])
+    plt.plot(data_out[:10, 0], data_out[:10, 1])
+    plt.show()
+    '''
+
+def main_oppar():
+    n_oppar = 1
+    n_var = 8
+    timestep = 0.05
+    t_init = 0
+    t_end = 20
+    n=20#<100
+    num_samples = 401*n
+    # For Windows:
+    #data = np.load('data\\POD_Coeff_40.npy')
+    # For Linux
+    data = np.load('data/POD_Coeff_40.npy')
+    pod_data = data[:num_samples, :n_var] # Simulation run every 401 steps
+    heat_loads = data[:num_samples, -1:]
+    #pod_data -= np.mean(pod_data, axis=0)
+    #twod_data /= np.std(twod_data, axis=0)
+
+    input_y, input_x, output_y = order_training_data(pod_data,heat_loads, [401]*n)
+
+    num_it = int((t_end-t_init)/timestep)
+    rk = RungeKutta_nn(n_oppar, n_var, timestep, t_init, t_end)
+    rk.bsize = int(num_it/10.0)
+    rk.train_epochs = 1000#3000
+    rk.lr = 0.00005
+    rk.bound = 0.0001
+    rk.n_hidden1 = 50
+    rk.n_hidden2 = 50
+
+    #oppar = np.zeros(twod_data.shape[0])
+    rk.start_train(input_y, input_x, output_y)
+
+    time_vals = np.arange(t_init, t_end, timestep)
+
+    pred = rk.predict_from_samples(y=input_y[0], x=input_x, num_it=num_it)
+
+    # Plots
+    fig = plt.figure(figsize=(15, 5))
+
+    ax = fig.add_subplot(131, projection='3d')
+    plt.plot(rk.data[:400, 0], rk.data[:400, 1], rk.data[:400, 2], label="Real Value")
+    plt.plot(pred[:, 0], pred[:, 1], pred[:, 2], label="Prediction")
+    plt.title("ODE solution")
+    plt.legend()
+
+    ax = fig.add_subplot(132)
+    plt.plot(time_vals, rk.data[:400, 0], label="Real Value")
+    plt.plot(time_vals, pred[:400, 0], label="Prediction")
+    plt.title("ODE solution x_1")
+    plt.legend()
+
+    ax = fig.add_subplot(133)
+    plt.plot(time_vals, rk.data[:400, 1], label="Real Value")
+    plt.plot(time_vals, pred[:400, 1], label="Prediction")
+    plt.title("ODE solution x_2")
+    plt.legend()
+
+    plt.show()
 
 
 if __name__ == "__main__":
     #main_1d() # To run main_1d, the function ode_sol must be changed to a 1d eq.
     #main_2d()
-    main_POD()
+    #main_POD()
+    main_oppar()
