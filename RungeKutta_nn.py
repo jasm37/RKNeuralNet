@@ -1,6 +1,7 @@
 from sklearn.model_selection import train_test_split
 import tensorflow as tf
 import numpy as np
+import os
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
@@ -67,6 +68,8 @@ class RungeKutta_nn():
         self.tf_b3 = []
 
         # Data properties
+        self.input_x = []
+        self.input_y = []
         self.data_batch = [] #complete dataset
         self.data_coeff = [] #complete POD coefficient representation
         #self.centered_data = 0 #centered dataset: subtracted the mean to all samples
@@ -160,29 +163,29 @@ class RungeKutta_nn():
             data_x = data_x.reshape((data_x.shape[0], 1))
 
         # Data has shape (#snapshots, #vars)
-        self.f_t_init = data_y[0]
-        n_train = data_y.shape[0] - 1
+        #self.f_t_init = data_y[0]
+        n_train = data_y.shape[0]
 
         self.data = np.hstack((data_y, data_x))
-        self.input_y = data_y[:-1]
-        self.input_x = data_x[:-1]
+        self.input_y = data_y
+        self.input_x = data_x
         self.joint_input = np.hstack((self.input_y, self.input_x))
 
-        if output_y == None:
+        if output_y is None:
             self.output = data_y[1:]
         else:
-            self.output = output_y
+            self.output = output_y[:400]
 
         self.joint_input = np.hstack((self.input_y, self.input_x))
         ratio = 0.1
 
-        train_x, test_x, train_y, test_y = train_test_split(self.joint_input, self.output,
+        train_input, test_input, train_output, test_output = train_test_split(self.joint_input, self.output,
                                                             test_size=int(n_train * ratio), random_state=42)
-        test1 = test_x[:, :self.n_var]
-        test2 = test_x[:, self.n_var:]
+        test_y = test_input[:, :self.n_var]
+        test_x = test_input[:, self.n_var:]
 
-        n_batches = int(train_x.shape[0] / self.bsize)
-        leftover = train_x.shape[0] - n_batches * self.bsize
+        n_batches = int(train_input.shape[0] / self.bsize)
+        leftover = train_input.shape[0] - n_batches * self.bsize
 
         # Input and output variables
         x = tf.placeholder("float", [None, self.n_oppar], name="OperatingParameters")
@@ -225,42 +228,49 @@ class RungeKutta_nn():
             while train_loss > self.bound and epoch < self.train_epochs:
                 epoch += 1
                 # Shuffle training samples
-                rand_index = np.random.permutation(len(train_x))
+                rand_index = np.random.permutation(len(train_input))
                 # train1 = self.add_gaussian_noise(train_x[rand_index, :self.n_var], 0.0005) ## Testing noisy input
-                train1 = train_x[rand_index, :self.n_var]
-                train2 = train_x[rand_index, self.n_var:]
+                train_y = train_input[rand_index, :self.n_var]
+                train_x = train_input[rand_index, self.n_var:]
                 # train_out = self.add_gaussian_noise(train_y[rand_index,:], 0.0005)
-                train_out = train_y[rand_index, :]
+                train_out = train_output[rand_index, :]
                 for i in range(n_batches):
                     # Group shuffled samples in batches
-                    data_in_1 = train1[i * self.bsize:(i + 1) * self.bsize].reshape((self.bsize, self.n_var))
-                    data_in_2 = train2[i * self.bsize:(i + 1) * self.bsize].reshape((self.bsize, self.n_oppar))
+                    data_in_y = train_y[i * self.bsize:(i + 1) * self.bsize].reshape((self.bsize, self.n_var))
+                    data_in_x = train_x[i * self.bsize:(i + 1) * self.bsize].reshape((self.bsize, self.n_oppar))
                     data_out = train_out[i * self.bsize:(i + 1) * self.bsize].reshape((self.bsize, self.n_var))
-                    values = {y: data_in_1,
-                              x: data_in_2,
+                    values = {y: data_in_y,
+                              x: data_in_x,
                               z: data_out}
                     sess.run(optimizer, feed_dict=values)
 
                 if leftover == 0:
                     pass
                 else:
-                    data_in_1 = train1[-leftover:, :].reshape((leftover, self.n_var))
-                    data_in_2 = train2[-leftover:, :].reshape((leftover, self.n_oppar))
-                    data_out = train_y[-leftover:, :].reshape((leftover, self.n_var))
-                    values = {y: data_in_1,
-                              x: data_in_2,
+                    data_in_y = train_y[-leftover:, :].reshape((leftover, self.n_var))
+                    data_in_x = train_x[-leftover:, :].reshape((leftover, self.n_oppar))
+                    data_out = train_output[-leftover:, :].reshape((leftover, self.n_var))
+                    values = {y: data_in_y,
+                              x: data_in_x,
                               z: data_out}
                     sess.run(optimizer, feed_dict=values)
 
+
                 if epoch % self.dstep == 0:
-                    values = {y: test1.reshape((test1.shape[0], self.n_var)),
-                              x: test2.reshape((test2.shape[0], self.n_oppar)),
-                              z: test_y.reshape((test_y.shape[0], self.n_var))}
+                    #values = {y: data_in_1,
+                    #          x: data_in_2,
+                    #          z: data_out}
+                    #res = sess.run(self.tf_forward_pass(y, x), feed_dict=values)
+                    #print("Predicted values are:", res[:2, :2])
+                    #print("Real values are:", data_out[:2, :2])
+                    values = {y: test_y.reshape((test_y.shape[0], self.n_var)),
+                              x: test_x.reshape((test_x.shape[0], self.n_oppar)),
+                              z: test_output.reshape((test_output.shape[0], self.n_var))}
                     test_loss = sess.run(loss, feed_dict=values)
                     print('Test Loss at step %s: \t%s' % (epoch, test_loss))
 
-                    values = {y: train1.reshape((train1.shape[0], self.n_var)),
-                              x: train2.reshape((train2.shape[0], self.n_oppar)),
+                    values = {y: train_y.reshape((train_y.shape[0], self.n_var)),
+                              x: train_x.reshape((train_x.shape[0], self.n_oppar)),
                               z: train_out.reshape((train_out.shape[0], self.n_var))}
                     train_loss = sess.run(loss, feed_dict=values)
                     print('Train Loss at step %s: \t%s' % (epoch, train_loss))
@@ -272,7 +282,6 @@ class RungeKutta_nn():
 def add_gaussian_noise(layer, std):
     return np.random.normal(layer, scale=std)
 
-
 def order_training_data(y_var, params, range_list):
     """
     Given simulation data in one big array, order training data for neural network.
@@ -283,14 +292,28 @@ def order_training_data(y_var, params, range_list):
     :return: inputs and outputs to train the neural network
 
     """
+    y_mean = np.mean(y_var, axis=0)
+    y_std = np.std(y_var, axis=0)
+    params_mean = np.mean(params, axis=0)
+    params_std = np.std(params, axis=0)
+    #if params_std == 0:
+    #    params_std = params
+
+    y_var -= y_mean
+    params -= params_mean
+    #params /= params_std
+
+
     num_train_snapshots = y_var.shape[0] - len(range_list)
 
     if y_var.ndim == 1:
+        y_var = y_var.reshape((y_var.shape[0],1))
         n_vars = 1
     else:
         n_vars = y_var.shape[1]
 
     if params.ndim == 1:
+        params = params.reshape((params.shape[0], 1))
         n_params = 1
     else:
         n_params = params.shape[1]
@@ -305,38 +328,58 @@ def order_training_data(y_var, params, range_list):
     for rang in range_list:
         end = start + rang - 1
         inputvar_list[start:end] = y_var[current:current+rang-1]
-        param_list[start:end] = param_list[current:current+rang]
-        outputvar_list[start:end] = param_list[current+1:current+rang]
+        param_list[start:end] = params[current:current+rang-1]
+        outputvar_list[start:end] = y_var[current+1:current+rang]
         current += rang
         start = end
     return inputvar_list, param_list, outputvar_list
 
 
 def main_POD():
+
     n_oppar = 1
     n_var = 10
     timestep = 0.05
     t_init = 0
     t_end = 20.05
 
+
+    data_in_y = np.load('data\\test_iny_m.npy')
+    data_in_x = np.load('data\\test_inx_m.npy')
+    data_out = np.load('data\\test_out_m.npy')
+    n_oppar = 1
+    n_var = 3
+    timestep = 0.1
+    t_init = 0
+    t_end = 1
+
+    '''
     data = np.load('data\\POD_Coeff_40.npy')
-    twod_data = data[-401:, :n_var] # Simulation run every 401 steps
+    twod_data = data[:, :n_var] # Simulation run every 401 steps
     twod_data -= np.mean(twod_data, axis=0)
     #twod_data /= np.std(twod_data, axis=0)
-
+    '''
     num_it = int((t_end-t_init)/timestep)
     oppar = 0
     rk = RungeKutta_nn(n_oppar, n_var, timestep, t_init, t_end)
     rk.bsize = int(num_it/10.0)
-    rk.train_epochs = 3000
+    rk.train_epochs = 2000
     rk.lr = 0.0001
     rk.bound = 0.0001
     rk.n_hidden1 = 10
     rk.n_hidden2 = 10
 
-    oppar = np.zeros(twod_data.shape[0])
-    rk.start_train(twod_data, oppar)
+    #oppar = np.zeros(twod_data.shape[0])
+    #rk.start_train(twod_data, oppar)
+    rk.start_train(data_in_y, data_in_x, data_out)
+    range10 = np.arange(0,10,1)
+    pred = rk.predict_from_samples(y=data_in_y[0], x=data_in_x, num_it=10)
+    plt.plot(pred[:,0], pred[:,1])
+    plt.plot(data_out[:10, 0], data_out[:10, 1])
+    plt.show()
+
     time_vals = np.arange(t_init, t_end, timestep)
+    '''
     pred = rk.predict_from_samples(y=data[-401,:n_var], x=oppar, num_it=num_it)
 
     # Plots
@@ -361,10 +404,10 @@ def main_POD():
     plt.legend()
 
     plt.show()
+    '''
 
 
 if __name__ == "__main__":
     #main_1d() # To run main_1d, the function ode_sol must be changed to a 1d eq.
     #main_2d()
     main_POD()
-
