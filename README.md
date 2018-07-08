@@ -1,5 +1,5 @@
 # Runge Kutta neural network implementation
-Small implementation of a Runge Kutta Neural Network. It learns the behaviour of dynamical systems and its inner differential equations. This way it can make predictions in time but also describe intrinsic behaviour of the dynamics.
+Small implementation of a Runge Kutta Neural Network. This neural network learns the behaviour of dynamical systems and its inner differential equations. This way it can make predictions in time but also describe intrinsic behaviour of the dynamics, such as attractors.
 
 ## Libraries (Python 3.5):
   - TensorFlow (<1.4): To train neural networks
