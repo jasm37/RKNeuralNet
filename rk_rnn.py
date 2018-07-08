@@ -296,6 +296,7 @@ class rknn():
             current_y = pred_var
         return pred_list
 
+
 def main_1d():
     n_oppar = 1
     n_var = 1
@@ -327,6 +328,7 @@ def main_1d():
     plt.legend()
 
     plt.show()
+
 
 def main_2d():
     n_oppar = 1
@@ -373,6 +375,7 @@ def main_2d():
     plt.legend()
 
     plt.show()
+
 
 def main_POD():
     n_oppar = 1

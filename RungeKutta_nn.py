@@ -1,7 +1,6 @@
 from sklearn.model_selection import train_test_split
 import tensorflow as tf
 import numpy as np
-import os
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
@@ -482,5 +481,5 @@ def main_oppar():
 if __name__ == "__main__":
     #main_1d() # To run main_1d, the function ode_sol must be changed to a 1d eq.
     #main_2d()
-    #main_POD()
-    main_oppar()
+    main_POD()
+    #main_oppar()
