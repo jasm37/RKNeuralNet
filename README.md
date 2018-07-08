@@ -6,7 +6,7 @@ Small implementation of a Runge Kutta Neural Network. This neural network learns
   - Scikit-learn : To split data into train and test sets
   - Matplotlib : For plotting purposes
   
-## File structure:
+## Main files:
   - main.py: Script to run small demo
   - RungeKuttaNN.py: Contains neural network class
   - helper.py: Contains helper functions for the neural network
